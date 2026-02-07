@@ -2,7 +2,8 @@
 #include <usbhub.h>
 #include <SPI.h>
 
-#define _LOG_ENABLED
+// open jumper to log with Serial(PB0&PB1 will not work)
+#undef _LOG_ENABLED
 #ifdef _LOG_ENABLED
 #define LOG_INIT(baud)    { Serial.begin(baud); } //while(!Serial); }
 #define LOG(message)      (Serial.print(message))
@@ -26,6 +27,68 @@
 #define LED_OFF()
 #endif
 
+// ### Apple //e  keyboard socket(26pin IDC)
+//          ^
+//          | rear(slot)
+//        -----
+//    X6 |26 25| Y7
+// /SHFT |24 23| Y6
+//    Y9 |22 21| X4
+//    X3 |20 19| X5
+//    X1 |18 17| X7
+//    X2 |16 15| /RESET
+//    X0 |14 13||GND
+//    Y8 |12 11| /CTRL
+//    Y5 |10  9| /CAPS
+//    Y4 |8   7| PB0/OAPL/Cmd
+//    Y3 |6   5| PB1/CAPL/Opt
+//    Y2 |4   3| 5V
+//    Y1 |2   1| Y0
+//        -----
+//          | front(keyboard)
+//          v
+
+// ### Arduino Nano
+//                USB
+//                   ---|  |---
+//  SCK UHS <-- SCK |16      15| D12 MISO --> UHS MISO
+//      UHS <-- 3V3 |17      14| D11 MOSI --> UHS MOSI
+//              REF |18      13| D10 SS --> UHS SS
+//           <-- A0 |19      12| D9 --> UHS INT
+//  INH 4067 <-- A1 |20      11| D8 --> 4051 S2 (X b2)
+//  SHFT A2E <-- A2 |21      10| D7 --> 4051 S1 (X b1)
+// RESET A2E <-- A3 |22       9| D6 --> 4051 S0 (X b0)
+//      CAPS <-- A4 |23       8| D5 --> 4067 S3 (Y b3)
+//      CTRL <-- A5 |24       7| D4 --> 4067 S2 (Y b2)
+//           x-- A6 |25       6| D3 --> 4067 S1 (Y b1)
+//           x-- A7 |26       5| D2 --> 4067 S0 (Y b0)
+//       UHS <-- 5V |27       4| GND
+//      UHS <-- RST |28       3| RST
+//              GND |29 x x x 2| RX0 --> JUMPER -> A2E PB0
+//              VIN |30 x x x 1| TX1 --> JUMPER -> A2E PB1
+//                   ----------
+
+// ### USB Host Shield
+//                ---|    |---
+//   Nano <-- SS |o   VBUS o o| INT --> Nano
+// Nano <-- MOSI |o    INT x x|
+// Nano <-- MISO |o    GPX x x|
+//  Nano <-- SCK |o    RST o x|
+//               |x        x x|
+//               |x          x|
+//               |x          x|
+//               |x          x|
+// Nano <-- 3.3V |o x x  x x x| GND
+//               |x x x  x x x| RST --> Nano
+//           GND |x x x  x x x|
+//               |x x x  x x x|
+//                -------------
+//
+// ### 4067 16ch mux for Y (rows)
+//
+// ### 4051  8ch mux for X (cols)
+//
+
 #define MATRIX_ROWS 10
 #define MATRIX_COLS 8
 
@@ -37,7 +100,7 @@ uint8_t matrix[MATRIX_ROWS][MATRIX_COLS] = {
   // 1!   Qq    Dd    Xx
   { 0x1e, 0x14, 0x07, 0x1b, 0x00, 0x00, 0x00, 0x00 }, // Y1
   // 2@   Ww    Ss    Cc
-`   { 0x1f, 0x1a, 0x16, 0x06, 0x00, 0x00, 0x00, 0x00 }, // Y2
+  { 0x1f, 0x1a, 0x16, 0x06, 0x00, 0x00, 0x00, 0x00 }, // Y2
   // 3#   Ee    Hh    Vv
   { 0x20, 0x08, 0x0b, 0x19, 0x00, 0x00, 0x00, 0x00 }, // Y3
   // 4$   Rr    Ff    Bb
@@ -63,23 +126,35 @@ uint8_t matrix[MATRIX_ROWS][MATRIX_COLS] = {
 //
 
 // A2E KBD
+
 #define PIN_SHIFT A2
-#define PIN_RESET A3
+#define PIN_RESET A3 // F12
 #define PIN_CTRL  A4
 #define PIN_CAPS  A5
-#define PIN_PB1   A6
-#define PIN_PB0   A7
+// use RX(0), TX(1)
+// NOTE: open jumper before upload firmware
+#define PIN_PB1   0 // CAPL / LGUI / RALT
+#define PIN_PB0   1 // OAPL / LALT
+// XXX: nano A6-A7 is analog input only!
+//#define PIN_PB1   A7 // CAPL / LGUI / RALT
+//#define PIN_PB0   A6 // OAPL / LALT
+
 // 4067
+
 #define PIN_Y_S0  2
 #define PIN_Y_S1  3
 #define PIN_Y_S2  4
 #define PIN_Y_S3  5
 #define PIN_Y_INH A1
+
 // 4051
+
 #define PIN_X_S0  6
 #define PIN_X_S1  7
 #define PIN_X_S2  8
+
 // USB host shield
+
 #define PIN_INT   9
 #define PIN_SS    10
 #define PIN_MOSI  11
@@ -117,10 +192,34 @@ void KbdRptParser::OnControlKeysChanged(uint8_t before, uint8_t after) {
   LOG(mod.bmRightGUI ? "RGUI " : " ");
   LOG_LINE();
 
-  digitalWrite(PIN_CTRL, (mod.bmLeftCtrl || mod.bmRightCtrl) ? LOW : HIGH);
-  digitalWrite(PIN_SHIFT, (mod.bmLeftShift || mod.bmRightShift) ? LOW : HIGH);
-  digitalWrite(PIN_PB0, (mod.bmLeftAlt || mod.bmRightAlt) ? HIGH : LOW);
-  digitalWrite(PIN_PB1, (mod.bmLeftGUI || mod.bmRightGUI) ? HIGH : LOW);
+  if (mod.bmLeftCtrl || mod.bmRightCtrl) {
+    digitalWrite(PIN_CTRL, LOW);
+    LOG_LINE("CTRL DN");
+  } else {
+    digitalWrite(PIN_CTRL, HIGH);
+    LOG_LINE("CTRL UP");
+  }
+  if (mod.bmLeftShift || mod.bmRightShift) {
+    digitalWrite(PIN_SHIFT, LOW);
+    LOG_LINE("SHIFT DN");
+  } else {
+    digitalWrite(PIN_SHIFT, HIGH);
+    LOG_LINE("SHIFT UP");
+  }
+  if (mod.bmLeftAlt) {
+    digitalWrite(PIN_PB0, HIGH);
+    LOG_LINE("OAPL(PB0) DN");
+  } else {
+    digitalWrite(PIN_PB0, LOW);
+    LOG_LINE("OAPL(PB0) UP");
+  }
+  if (mod.bmLeftGUI || mod.bmRightAlt) {
+    digitalWrite(PIN_PB1, HIGH);
+    LOG_LINE("CAPL(PB1) DN");
+  } else {
+    digitalWrite(PIN_PB1, LOW);
+    LOG_LINE("CAPL(PB1) UP");
+  }
 }
 
 void KbdRptParser::OnKeyDown(uint8_t mod, uint8_t key)
@@ -130,11 +229,19 @@ void KbdRptParser::OnKeyDown(uint8_t mod, uint8_t key)
   LED_ON();
 
   if (key == HID_CAPS) {
-    digitalWrite(PIN_CAPS, kbdLockingKeys.kbdLeds.bmCapsLock ? LOW : HIGH);
-    LOG_LINE("CAPS");
+    LOG_LINE("CAPS DOWN");
+    return;
+    // caps lock handled in OnKeyUp
+    //if (kbdLockingKeys.kbdLeds.bmCapsLock) {
+    //  digitalWrite(PIN_CAPS, LOW);
+    //  LOG_LINE("CAPS ON");
+    //} else {
+    //  digitalWrite(PIN_CAPS, HIGH);
+    //  LOG_LINE("CAPS OFF");
+    //}
   } else if (key == HID_F12) {
     digitalWrite(PIN_RESET, LOW);
-    LOG_LINE("RESET ON");
+    LOG_LINE("RESET DOWN");
   } else {
     for (int y = 0; y < MATRIX_ROWS; y += 1) {
       for (int x = 0; x < MATRIX_COLS; x += 1) {
@@ -169,11 +276,17 @@ void KbdRptParser::OnKeyUp(uint8_t mod, uint8_t key)
   LED_OFF();
 
   if (key == HID_CAPS) {
-    digitalWrite(PIN_CAPS, kbdLockingKeys.kbdLeds.bmCapsLock ? LOW : HIGH);
-    LOG_LINE("CAPS");
+    LOG_LINE("CAPS UP");
+    if (kbdLockingKeys.kbdLeds.bmCapsLock) {
+      digitalWrite(PIN_CAPS, LOW);
+      LOG_LINE("CAPS ON");
+    } else {
+      digitalWrite(PIN_CAPS, HIGH);
+      LOG_LINE("CAPS OFF");
+    }
   } else if (key == HID_F12) {
     digitalWrite(PIN_RESET, HIGH);
-    LOG_LINE("RESET OFF");
+    LOG_LINE("RESET UP");
   } else {
     // disable: off x -> y
     digitalWrite(PIN_Y_INH, HIGH);
