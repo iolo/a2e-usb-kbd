@@ -11,7 +11,6 @@ Apple //e daughter board for USB HID Keyboard
 - CD4051
 - CD4067
 - 2 x 470 ohm resistors
-- 4 x 1K ohm resistors
 - 13x2 IDC female connector or cable
 - and USB HID Keyboard
 
@@ -24,6 +23,15 @@ Apple //e daughter board for USB HID Keyboard
 3. Install USB Host Shield Library 2.0
 4. Compile & Upload
 5. Enjoy!
+
+## Making
+
+- ![breadboard](breadboard.jpg)
+- ![notes](notes.jpg)
+- ![top](top.jpg)
+- ![bottom](bottom.jpg)
+- ![sather save me](sather-save-me.jpg)
+- [in action](https://youtube.com/shorts/Eiom-mUk_yY)
 
 ## References
 
